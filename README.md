@@ -1,8 +1,8 @@
 # PHP Distroless Images
 
 Minimal, non-root PHP CLI and PHP-FPM images with no shell or package manager.
-Supported PHP branches are assembled from current Wolfi packages and gated by
-Trivy.
+Supported PHP branches use current Wolfi PHP packages on the Baseless glibc
+runtime and are gated by Trivy.
 
 ## Image matrix
 
@@ -85,7 +85,7 @@ docker build \
 
 Supported images:
 
-- are built from package-managed Wolfi components;
+- use the Baseless glibc runtime with package-managed Wolfi PHP components;
 - retain APK inventory/SBOM metadata so scanners can identify packages;
 - remove `sh`, BusyBox and `apk` from the final filesystem;
 - run as UID/GID `65532:65532`;
@@ -102,7 +102,7 @@ and use seccomp/AppArmor where available.
 ## Local builds
 
 ```bash
-# Supported Wolfi image
+# Supported Baseless-backed image
 docker build --build-arg PHP_VERSION=8.5 --build-arg PHP_FLAVOR=cli \
   -t php-distroless:8.5-cli .
 ```
