@@ -32,6 +32,7 @@ jobs:
           build-args: |
             PHP_VERSION=${{ matrix.php }}
             PHP_FLAVOR=${{ matrix.flavor }}
+            CACHE_BUST=${{ github.run_id }}-${{ github.run_attempt }}
           platforms: linux/amd64,linux/arm64
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GITHUB_TOKEN }}

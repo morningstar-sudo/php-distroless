@@ -7,6 +7,7 @@ FROM cgr.dev/chainguard/wolfi-base:latest AS rootfs
 ARG PHP_VERSION
 ARG PHP_FLAVOR=cli
 ARG PHP_EXTENSIONS="bcmath ctype curl dom fileinfo iconv intl mbstring mysqlnd mysqli openssl pcntl pdo pdo_mysql pdo_pgsql phar posix simplexml sodium xml xmlreader xmlwriter zip"
+ARG CACHE_BUST=local
 
 COPY --from=baseless-runtime /lib/apk/db/installed /tmp/baseless-installed
 
@@ -14,6 +15,7 @@ COPY --from=baseless-runtime /lib/apk/db/installed /tmp/baseless-installed
 # except the selected PHP SAPI. The APK database and package SBOMs remain so
 # vulnerability scanners can still report the contents honestly.
 RUN set -eu; \
+    test -n "$CACHE_BUST"; \
     case "$PHP_FLAVOR" in \
       cli) sapi_package=""; sapi_binary="php" ;; \
       fpm) sapi_package="php-${PHP_VERSION}-fpm"; sapi_binary="php-fpm" ;; \
