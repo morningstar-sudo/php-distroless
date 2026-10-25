@@ -15,53 +15,131 @@ permissions:
   id-token: write
 
 jobs:
+  # Each architecture builds and scans natively on its own runner (no QEMU)
+  # and pushes an untagged per-architecture image; merge joins them by digest
+  # and applies the only tags: latest and <sha>-<date>.
   supported:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ["8.2", "8.3", "8.4", "8.5"]
+        flavor: [cli, fpm]
+        platform:
+          - { arch: amd64, runner: ubuntu-24.04 }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
+    env:
+      BUILD_ARGS: |
+        PHP_VERSION=${{ matrix.php }}
+        PHP_FLAVOR=${{ matrix.flavor }}
+        CACHE_BUST=${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Build and Trivy gate only; the push below reuses the build cache.
+      - uses: abxst/actions/strict@v3
+        id: build
+        with:
+          push: false
+          image-name: ${{ github.repository }}-${{ matrix.php }}-${{ matrix.flavor }}
+          dockerfile: ./Dockerfile
+          build-args: ${{ env.BUILD_ARGS }}
+          platforms: linux/${{ matrix.platform.arch }}
+          scan-platform: linux/${{ matrix.platform.arch }}
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push by digest
+        id: push
+        if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/${{ matrix.platform.arch }}
+          build-args: ${{ env.BUILD_ARGS }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          outputs: type=image,name=ghcr.io/${{ steps.build.outputs.image-name-lc }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha
+
+      - name: Export digest
+        if: steps.push.outputs.digest != ''
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          mkdir -p digests
+          touch "digests/${DIGEST#sha256:}"
+
+      - uses: actions/upload-artifact@v4
+        if: steps.push.outputs.digest != ''
+        with:
+          name: digests-${{ matrix.php }}-${{ matrix.flavor }}-${{ matrix.platform.arch }}
+          path: digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    needs: supported
+    # Run even when another matrix cell failed; a variant missing an
+    # architecture fails its own merge below instead of blocking the rest.
+    if: ${{ !cancelled() && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
         php: ["8.2", "8.3", "8.4", "8.5"]
         flavor: [cli, fpm]
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: abxst/actions/strict@v3
-        id: build
+      - uses: actions/download-artifact@v4
         with:
-          push: ${{ github.event_name != 'pull_request' }}
-          image-name: ${{ github.repository }}-${{ matrix.php }}-${{ matrix.flavor }}
-          dockerfile: ./Dockerfile
-          build-args: |
-            PHP_VERSION=${{ matrix.php }}
-            PHP_FLAVOR=${{ matrix.flavor }}
-            CACHE_BUST=${{ github.run_id }}-${{ github.run_attempt }}
-          platforms: linux/amd64,linux/arm64
-          registry-username: ${{ github.actor }}
-          registry-password: ${{ secrets.GITHUB_TOKEN }}
+          pattern: digests-${{ matrix.php }}-${{ matrix.flavor }}-*
+          path: digests
+          merge-multiple: true
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create multi-arch manifest
+        id: manifest
+        env:
+          NAME: ghcr.io/${{ github.repository }}-${{ matrix.php }}-${{ matrix.flavor }}
+        run: |
+          set -euo pipefail
+          image="${NAME,,}"
+          tags=("${image}:${GITHUB_SHA::7}-$(date -u +%d%m%Y)" "${image}:latest")
+          sources=()
+          for file in digests/*; do
+            sources+=("${image}@sha256:${file##*/}")
+          done
+          test "${#sources[@]}" -eq 2
+          docker buildx imagetools create "${tags[@]/#/--tag=}" "${sources[@]}"
+          digest="$(docker buildx imagetools inspect "${tags[0]}" --format '{{json .Manifest}}' | jq -r .digest)"
+          echo "image=${image}" >> "${GITHUB_OUTPUT}"
+          echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
 
       - uses: sigstore/cosign-installer@v4.1.2
-        if: steps.build.outputs.image-digest != ''
         with:
           cosign-release: v3.1.4
 
       - uses: anchore/sbom-action/download-syft@v0
-        if: steps.build.outputs.image-digest != ''
 
       - name: Sign image and attest SBOM
-        if: steps.build.outputs.image-digest != ''
         env:
-          IMAGE: ghcr.io/${{ steps.build.outputs.image-name-lc }}
-          DIGEST: ${{ steps.build.outputs.image-digest }}
+          IMAGE: ${{ steps.manifest.outputs.image }}
+          DIGEST: ${{ steps.manifest.outputs.digest }}
         run: |
           set -euo pipefail
           platform_digests="$(docker buildx imagetools inspect --raw "${IMAGE}@${DIGEST}" |
-            jq -r '.manifests[]? | select(.platform.os == "linux") | .digest')"
-          for digest in ${platform_digests:-${DIGEST}}; do
+            jq -r '.manifests[] | select(.platform.os == "linux") | .digest')"
+          for digest in ${platform_digests}; do
             syft "${IMAGE}@${digest}" -o spdx-json=sbom.spdx.json
             cosign attest --yes \
               --type spdxjson --predicate sbom.spdx.json "${IMAGE}@${digest}"
             cosign sign --yes --registry-referrers-mode=legacy "${IMAGE}@${digest}"
           done
-          if [ -n "${platform_digests}" ]; then
-            cosign sign --yes --registry-referrers-mode=legacy "${IMAGE}@${DIGEST}"
-          fi
+          cosign sign --yes --registry-referrers-mode=legacy "${IMAGE}@${DIGEST}"
