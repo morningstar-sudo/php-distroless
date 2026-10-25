@@ -39,7 +39,7 @@ jobs:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: sigstore/cosign-installer@v4
+      - uses: sigstore/cosign-installer@v4.1.2
         if: steps.build.outputs.image-digest != ''
         with:
           cosign-release: v3.1.4
