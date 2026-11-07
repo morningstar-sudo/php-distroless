@@ -15,10 +15,10 @@ permissions:
   id-token: write
 
 jobs:
-  # Build and scan AMD64 images on the organization runner.
+  # Build and scan AMD64 images on Ubuntu 24.04.
   # Publish immutable digests before applying latest and <sha>-<date> tags.
   supported:
-    runs-on: [self-hosted, Linux, X64, semi-system]
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -31,9 +31,6 @@ jobs:
         CACHE_BUST=${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Allow runner user to access Docker
-        run: sudo chown "$(id -u)" /var/run/docker.sock
 
       - uses: docker/setup-buildx-action@v3
 
@@ -92,16 +89,13 @@ jobs:
     needs: supported
     # Allow successful variants to publish when another matrix cell fails.
     if: ${{ !cancelled() && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
-    runs-on: [self-hosted, Linux, X64, semi-system]
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
         php: ["8.2", "8.3", "8.4", "8.5"]
         flavor: [cli, fpm]
     steps:
-      - name: Allow runner user to access Docker
-        run: sudo chown "$(id -u)" /var/run/docker.sock
-
       - uses: actions/download-artifact@v4
         with:
           pattern: digests-${{ matrix.php }}-${{ matrix.flavor }}-*
