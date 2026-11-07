@@ -117,5 +117,5 @@ docker run --rm --entrypoint /bin/sh php-distroless:8.5-cli
 ## CI
 
 `.github/workflows/build.yml` uses `abxst/actions/strict@v3` for all matrix
-entries and builds `linux/amd64` and `linux/arm64`. Releases publish immutable
+entries and builds `linux/amd64`. Releases publish immutable
 SHA/date tags plus `latest` only after the full strict gate passes.
