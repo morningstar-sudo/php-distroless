@@ -90,7 +90,7 @@ Supported images:
 - remove `sh`, BusyBox and `apk` from the final filesystem;
 - run as UID/GID `65532:65532`;
 - are compatible with a read-only root filesystem; and
-- pass the `abxst/actions/strict@v3` Trivy gate across all severities before
+- pass the Trivy gate across all severities before
   publication.
 
 The absence of a shell is defense in depth, not a fix for arbitrary PHP code
@@ -116,6 +116,6 @@ docker run --rm --entrypoint /bin/sh php-distroless:8.5-cli
 
 ## CI
 
-`.github/workflows/build.yml` uses `abxst/actions/strict@v3` for all matrix
+`.github/workflows/build.yml` uses Docker Buildx and Trivy for all matrix
 entries and builds `linux/amd64`. Releases publish immutable
 SHA/date tags plus `latest` only after the full strict gate passes.
