@@ -1,6 +1,6 @@
 ARG PHP_VERSION=8.5
 
-FROM ghcr.io/morningstar-sudo/baseless-glibc:latest AS baseless-runtime
+FROM ghcr.io/semi-system/baseless-glibc:latest AS baseless-runtime
 
 FROM cgr.dev/chainguard/wolfi-base:latest AS rootfs
 
@@ -102,7 +102,7 @@ ARG PHP_FLAVOR=cli
 LABEL org.opencontainers.image.title="PHP distroless" \
       org.opencontainers.image.description="Minimal Baseless PHP ${PHP_VERSION} ${PHP_FLAVOR} runtime" \
       org.opencontainers.image.vendor="morningstar-sudo" \
-      org.opencontainers.image.source="https://github.com/morningstar-sudo/php-distroless"
+      org.opencontainers.image.source="https://github.com/semi-system/php-distroless"
 
 COPY --from=rootfs /rootfs/ /
 
